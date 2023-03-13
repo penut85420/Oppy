@@ -119,7 +119,7 @@ class OppyBot(discord.Client):
 
         # Send Help Message
         if self.CheckCommand(msg, self.help_command):
-            self.SendHelp(message)
+            await self.SendHelp(message)
             return True
 
         # Reset Chat
@@ -143,10 +143,12 @@ class OppyBot(discord.Client):
         return False
 
     async def SendHelp(self, message: Message):
-        help_str = BacktickConcat(self.help_command)
-        reset_str = BacktickConcat(self.reset_command)
-        msg_params = (self.emoji_done, self.emoji_pending, help_str, reset_str)
-        await message.channel.send(self.help_message % msg_params)
+        help_str = BacktickConcat(self.prefix, self.help_command)
+        reset_str = BacktickConcat(self.prefix, self.reset_command)
+        emoji_done_s = "<:" + self.emoji_done[1:]
+        emoji_pending_s = "<:" + self.emoji_pending[1:]
+        args = (emoji_done_s, emoji_pending_s, help_str, reset_str)
+        await message.channel.send("\n".join(self.help_message) % args)
 
     def CheckCommand(self, msg, cmds):
         for c in cmds:
@@ -238,12 +240,12 @@ def DoEscape(msg):
     return s
 
 
-def BacktickConcat(a):
-    return BacktickWrap(BacktickJoin(a))
+def BacktickConcat(p, a):
+    return BacktickWrap(BacktickJoin(p, a))
 
 
-def BacktickJoin(a):
-    return "`, `".join(a)
+def BacktickJoin(p, a):
+    return f"`, `".join(f"{p}{aa}" for aa in a)
 
 
 def BacktickWrap(s):
