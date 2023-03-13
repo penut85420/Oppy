@@ -1,0 +1,31 @@
+{
+    "api_key": "OPENAI_API_KEY",
+    "target_channels": [
+        1000000000000000001,
+        1000000000000000002
+    ],
+    "delim": "，。、：！？；（）「」,.\n",
+    "discord_token": "DISCORD_BOT_TOKEN",
+    "emoji_pending": "<EMOJI_PENDING:1000000000000000000>",
+    "emoji_done": "<EMOJI_DONE:100000000000000000>",
+    "message_reset": "已重置歐派勞工的歷史訊息",
+    "message_waiting": "（等待歐派勞工回應中 ...）",
+    "message_on_error": " ... 發生錯誤，請稍後嘗試",
+    "message_no_resp": "無法取得回應，請稍後再試",
+    "reset_delta": { "hours": 1 },
+    "command_prefix": [ "!", "！" ],
+    "help_command": [ "help", "h", "hh", "hhh" ],
+    "reset_command": [ "reset", "r", "rr", "rrr" ],
+    "help_message": [
+        "《歐派勞工 Oppy 使用說明書》",
+        "",
+        "如果 Oppy 完成回覆，會在訊息下方新增一個 %s 的表情反應",
+        "如果 Oppy 正在回覆，會在訊息下方新增一個 %s 的表情反應",
+        "如果 Oppy 回覆到一半就結束了，可以複製最後兩三句話當作新的輸入",
+        "使用！開頭或者純粹只有伺服器表情符號的訊息，就不會被輸入到 Oppy 裡面",
+        "",
+        "%s - 顯示幫助訊息",
+        "%s - 重置聊天室"
+    ],
+    "converter_type": "s2tw"
+}
