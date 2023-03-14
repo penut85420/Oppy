@@ -75,7 +75,9 @@ class OppyBot(discord.Client):
         # Init Core Module
         self.b_using: Dict[int, bool] = {t: False for t in self.target_chs}
         self.mutex_lock: Dict[int, Lock] = {t: Lock() for t in self.target_chs}
-        self.last_timestamp = None
+        self.last_timestamp: Dict[int, datetime.datetime] = {
+            t: None for t in self.target_chs
+        }
 
     async def on_ready(self):
         logger.info(f"{self.user} | Ready!")
@@ -86,8 +88,7 @@ class OppyBot(discord.Client):
             return
 
         # Process Prompts
-        logger.info(f"Incoming Message: {message.content}")
-
+        self.LogMessage(message)
         await self.CheckReset(message)
 
         self.ToggleUsing(True, message.channel.id)
@@ -102,6 +103,14 @@ class OppyBot(discord.Client):
                 self.ToggleUsing(False, message.channel.id)
 
         await message.add_reaction(self.emoji_done)
+
+    def LogMessage(self, message: Message):
+        prefix = ""
+        try:
+            prefix = f"[{message.guild}#{message.channel}] "
+        except:
+            pass
+        logger.info(f"{prefix}{message.author}: {message.content}")
 
     def Run(self):
         self.run(self.discord_bot_token)
@@ -157,15 +166,16 @@ class OppyBot(discord.Client):
         return False
 
     async def CheckReset(self, message: Message):
+        cid = message.channel.id
         curr_ts = datetime.datetime.now()
-        if self.last_timestamp is None:
-            self.last_timestamp = datetime.datetime.now()
+        if self.last_timestamp[cid] is None:
+            self.last_timestamp[cid] = datetime.datetime.now()
 
-        if curr_ts - self.last_timestamp > self.reset_delta:
+        if curr_ts - self.last_timestamp[cid] > self.reset_delta:
             self.chatbot[message.channel.id].reset()
             await message.channel.send(self.message_reset)
 
-        self.last_timestamp = curr_ts
+        self.last_timestamp[cid] = curr_ts
 
     async def SendResponse(self, message: Message):
         # Iteration of Each Response
