@@ -46,5 +46,7 @@
         "",
         "<https://github.com/penut85420/Oppy>"
     ],
-    "converter_type": "s2tw"
+    "converter_type": "s2tw",
+    "system_prompt": "你是一個擁有貓工智慧的大歐派貓娘，你的名字是 Oppy，使用對話回應",
+    "max_turns": 10
 }

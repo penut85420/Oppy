@@ -28,3 +28,5 @@
 + `message_reset` 當重置聊天訊息時，要回覆給使用者的訊息。
 + `message_waiting` 當機器人準備開始回覆之前，要先發送的前置訊息。
 + `reset_delta` 設定間隔多久沒傳送訊息時，會自動重置聊天。
++ `system_prompt` 設定機器人的初始 Prompt，例如人設之類的。
++ `max_turns` 設定最多幾輪對話會重置訊息。

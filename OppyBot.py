@@ -5,15 +5,15 @@ import os
 import sys
 from dataclasses import dataclass
 from threading import Lock
-from typing import List, Dict
+from typing import Dict, List
 
 import discord
 from discord.message import Message
+from opencc import OpenCC
+from revChatGPT.V3 import Chatbot
 
 os.environ["LOGURU_AUTOINIT"] = "0"
 from loguru import logger
-from opencc import OpenCC
-from revChatGPT.V3 import Chatbot
 
 
 @dataclass
@@ -34,6 +34,8 @@ class ConfigKeys:
     ResetCommand = "reset_command"
     HelpMessage = "help_message"
     ConverterType = "converter_type"
+    SystemPrompt = "system_prompt"
+    MaxTurns = "max_turns"
 
 
 class OppyBot(discord.Client):
@@ -63,12 +65,17 @@ class OppyBot(discord.Client):
         self.help_command: List[str] = config[ConfigKeys.HelpCommand]
         self.reset_command: List[str] = config[ConfigKeys.ResetCommand]
         self.help_message: List[str] = config[ConfigKeys.HelpMessage]
+        self.system_prompt: str = config[ConfigKeys.SystemPrompt]
+        self.max_turns: int = config[ConfigKeys.MaxTurns]
         conv_type = config[ConfigKeys.ConverterType]
         self.conv = OpenCC(conv_type)
 
         # Init Chatbot
         self.chatbot: Dict[int, Chatbot] = {
-            t: Chatbot(config[ConfigKeys.OpenAI_API_Key])
+            t: Chatbot(
+                config[ConfigKeys.OpenAI_API_Key],
+                system_prompt=self.system_prompt,
+            )
             for t in self.target_chs
         }
 
@@ -78,6 +85,7 @@ class OppyBot(discord.Client):
         self.last_timestamp: Dict[int, datetime.datetime] = {
             t: None for t in self.target_chs
         }
+        self.turns: Dict[int, int] = {t: 0 for t in self.target_chs}
 
     async def on_ready(self):
         logger.info(f"{self.user} | Ready!")
@@ -125,6 +133,9 @@ class OppyBot(discord.Client):
         msg = message.content.lower()
         for prefix in self.command_prefix:
             msg = msg.replace(prefix, self.prefix)
+
+        if msg.strip() == "":
+            return True
 
         # Send Help Message
         if self.CheckCommand(msg, self.help_command):
@@ -174,8 +185,13 @@ class OppyBot(discord.Client):
         if curr_ts - self.last_timestamp[cid] > self.reset_delta:
             self.chatbot[message.channel.id].reset()
             await message.channel.send(self.message_reset)
+        elif self.turns[cid] >= self.max_turns:
+            self.chatbot[message.channel.id].reset()
+            self.turns[cid] = 0
+            await message.channel.send(self.message_reset)
 
         self.last_timestamp[cid] = curr_ts
+        self.turns[cid] += 1
 
     async def SendResponse(self, message: Message):
         # Iteration of Each Response
