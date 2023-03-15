@@ -182,10 +182,9 @@ class OppyBot(discord.Client):
         if self.last_timestamp[cid] is None:
             self.last_timestamp[cid] = datetime.datetime.now()
 
-        if curr_ts - self.last_timestamp[cid] > self.reset_delta:
-            self.chatbot[message.channel.id].reset()
-            await message.channel.send(self.message_reset)
-        elif self.turns[cid] >= self.max_turns:
+        c1 = self.turns[cid] >= self.max_turns
+        c2 = curr_ts - self.last_timestamp[cid] > self.reset_delta
+        if c1 or c2:
             self.chatbot[message.channel.id].reset()
             self.turns[cid] = 0
             await message.channel.send(self.message_reset)
