@@ -145,6 +145,7 @@ class OppyBot(discord.Client):
         # Reset Chat
         if self.CheckCommand(msg, self.reset_command):
             self.chatbot[message.channel.id].reset()
+            self.turns[message.channel.id] = 0
             await message.channel.send(self.message_reset)
             return True
 
