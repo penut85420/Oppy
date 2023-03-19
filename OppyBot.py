@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import datetime
 import json
 import os
@@ -102,8 +103,7 @@ class OppyBot(discord.Client):
         self.ToggleUsing(True, message.channel.id)
         async with message.channel.typing():
             try:
-                resp_msg = await self.SendResponse(message)
-                logger.info(f"Response: {resp_msg}")
+                asyncio.get_event_loop().create_task(self.SendResponse(message))
             except Exception as e:
                 logger.error(f"Error: {e}")
                 await message.channel.send(content=self.message_on_error)
@@ -197,7 +197,9 @@ class OppyBot(discord.Client):
         # Iteration of Each Response
         msg: Message = await message.channel.send(self.message_waiting)
         collect_msg = list()
-        for resp in self.chatbot[message.channel.id].ask(message.content):
+        for resp in self.chatbot[message.channel.id].ask_stream(
+            message.content
+        ):
             collect_msg.append(resp)
             resp_msg = self.ProcessMessage(collect_msg)
             if self.EndsWithDelim(resp_msg):
@@ -209,7 +211,8 @@ class OppyBot(discord.Client):
         else:
             await msg.edit(content=self.message_no_resp)
 
-        return "".join(collect_msg)
+        resp_msg = "".join(collect_msg)
+        logger.info(resp_msg)
 
     def ProcessMessage(self, msg: List[str]):
         resp_msg = "".join(msg)
