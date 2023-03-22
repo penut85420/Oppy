@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import datetime
 import json
 import os
@@ -9,9 +8,11 @@ from threading import Lock
 from typing import Dict, List
 
 import discord
+import openai
+import tiktoken
+from discord.ext.commands import AutoShardedBot
 from discord.message import Message
 from opencc import OpenCC
-from revChatGPT.V3 import Chatbot
 
 os.environ["LOGURU_AUTOINIT"] = "0"
 from loguru import logger
@@ -39,12 +40,72 @@ class ConfigKeys:
     MaxTurns = "max_turns"
 
 
-class OppyBot(discord.Client):
+class Chatbot:
+    def __init__(self, system_prompt, max_tokens=3000) -> None:
+        self.system_prompt = {"role": "system", "content": system_prompt}
+        self.history: List[Dict[str, str]] = [self.system_prompt]
+        self.max_tokens = max_tokens
+
+    async def AsyncChat(self, message: str):
+        self.history.append({"role": "user", "content": message})
+        token_count = GetTokenCount(self.history)
+        logger.info(f"Token Count: {token_count}")
+        while len(self.history) > 1 and token_count > self.max_tokens:
+            self.history.pop(1)
+            token_count = GetTokenCount(self.history)
+            logger.info(f"Token Count: {token_count}")
+        logger.info(self.history)
+
+        completion = await openai.ChatCompletion.acreate(
+            model="gpt-3.5-turbo",
+            messages=self.history,
+            stream=True,
+            timeout=30,
+            request_timeout=30,
+        )
+        resp = ""
+        try:
+            async for msg in completion:
+                delta = msg["choices"][0]["delta"]
+                if "content" in delta:
+                    yield delta["content"]
+                    resp += delta["content"]
+                else:
+                    logger.info(msg)
+        except Exception as e:
+            logger.error(e)
+        self.history.append({"role": "assistant", "content": resp})
+
+    def Reset(self):
+        self.history = [self.system_prompt]
+
+
+def GetTokenCount(history: List[Dict[str, str]], engine="gpt-3.5-turbo") -> int:
+    encoding = tiktoken.encoding_for_model(engine)
+    num_tokens = 0
+    for message in history:
+        num_tokens += 4
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += 1
+    num_tokens += 2
+    return num_tokens
+
+
+class OppyBot(AutoShardedBot):
     def __init__(self, config_path, *args, **kwargs) -> None:
         # Init Discord Client
         intents = discord.Intents.default()
         intents.message_content = True
-        super().__init__(*args, **kwargs, intents=intents)
+        super().__init__(
+            *args,
+            **kwargs,
+            intents=intents,
+            shard_ids=[0],
+            shard_count=1,
+            command_prefix="",
+        )
 
         # Load Params
         with open(config_path, "rt", encoding="UTF-8") as f:
@@ -63,20 +124,18 @@ class OppyBot(discord.Client):
         self.reset_delta = datetime.timedelta(**reset_delta_kwargs)
         self.command_prefix: List[str] = config[ConfigKeys.CommandPrefix]
         self.prefix = self.command_prefix[0]
-        self.help_command: List[str] = config[ConfigKeys.HelpCommand]
+        self.help_command_: List[str] = config[ConfigKeys.HelpCommand]
         self.reset_command: List[str] = config[ConfigKeys.ResetCommand]
         self.help_message: List[str] = config[ConfigKeys.HelpMessage]
         self.system_prompt: str = config[ConfigKeys.SystemPrompt]
-        self.max_turns: int = config[ConfigKeys.MaxTurns]
+        self.max_turns: int = config.get(ConfigKeys.MaxTurns, None)
         conv_type = config[ConfigKeys.ConverterType]
         self.conv = OpenCC(conv_type)
+        openai.api_key = config[ConfigKeys.OpenAI_API_Key]
 
         # Init Chatbot
         self.chatbot: Dict[int, Chatbot] = {
-            t: Chatbot(
-                config[ConfigKeys.OpenAI_API_Key],
-                system_prompt=self.system_prompt,
-            )
+            t: Chatbot(system_prompt=self.system_prompt)
             for t in self.target_chs
         }
 
@@ -103,7 +162,7 @@ class OppyBot(discord.Client):
         self.ToggleUsing(True, message.channel.id)
         async with message.channel.typing():
             try:
-                asyncio.get_event_loop().create_task(self.SendResponse(message))
+                await self.SendResponse(message)
             except Exception as e:
                 logger.error(f"Error: {e}")
                 await message.channel.send(content=self.message_on_error)
@@ -138,13 +197,13 @@ class OppyBot(discord.Client):
             return True
 
         # Send Help Message
-        if self.CheckCommand(msg, self.help_command):
+        if self.CheckCommand(msg, self.help_command_):
             await self.SendHelp(message)
             return True
 
         # Reset Chat
         if self.CheckCommand(msg, self.reset_command):
-            self.chatbot[message.channel.id].reset()
+            self.chatbot[message.channel.id].Reset()
             self.turns[message.channel.id] = 0
             await message.channel.send(self.message_reset)
             return True
@@ -164,7 +223,7 @@ class OppyBot(discord.Client):
         return False
 
     async def SendHelp(self, message: Message):
-        help_str = BacktickConcat(self.prefix, self.help_command)
+        help_str = BacktickConcat(self.prefix, self.help_command_)
         reset_str = BacktickConcat(self.prefix, self.reset_command)
         emoji_done_s = "<:" + self.emoji_done[1:]
         emoji_pending_s = "<:" + self.emoji_pending[1:]
@@ -183,10 +242,10 @@ class OppyBot(discord.Client):
         if self.last_timestamp[cid] is None:
             self.last_timestamp[cid] = datetime.datetime.now()
 
-        c1 = self.turns[cid] >= self.max_turns
+        c1 = self.max_turns is not None and self.turns[cid] >= self.max_turns
         c2 = curr_ts - self.last_timestamp[cid] > self.reset_delta
         if c1 or c2:
-            self.chatbot[message.channel.id].reset()
+            self.chatbot[message.channel.id].Reset()
             self.turns[cid] = 0
             await message.channel.send(self.message_reset)
 
@@ -197,13 +256,18 @@ class OppyBot(discord.Client):
         # Iteration of Each Response
         msg: Message = await message.channel.send(self.message_waiting)
         collect_msg = list()
-        for resp in self.chatbot[message.channel.id].ask_stream(
+        async for resp in self.chatbot[message.channel.id].AsyncChat(
             message.content
         ):
             collect_msg.append(resp)
             resp_msg = self.ProcessMessage(collect_msg)
-            if self.EndsWithDelim(resp_msg):
+            if resp_msg.strip() and self.EndsWithDelim(resp_msg):
                 await msg.edit(content=resp_msg)
+                # TODO: Make This Configurable
+                if len(resp_msg) >= 1000:
+                    logger.info(resp_msg)
+                    collect_msg = list()
+                    msg = await message.channel.send(self.message_waiting)
 
         # Send Final Respone
         if resp_msg != "":
