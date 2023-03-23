@@ -38,16 +38,30 @@ class ConfigKeys:
     ConverterType = "converter_type"
     SystemPrompt = "system_prompt"
     MaxTurns = "max_turns"
+    MaxTokens = "max_tokens"
+    MaxResp = "max_resp"
+
+
+@dataclass
+class RespKeys:
+    Assistant = "assistant"
+    Choices = "choices"
+    Content = "content"
+    Delta = "delta"
+    Name = "name"
+    Role = "role"
+    System = "system"
+    User = "user"
 
 
 class Chatbot:
-    def __init__(self, system_prompt, max_tokens=3000) -> None:
-        self.system_prompt = {"role": "system", "content": system_prompt}
+    def __init__(self, system_prompt, max_tokens=2000) -> None:
+        self.system_prompt = CreateMessage(RespKeys.System, system_prompt)
         self.history: List[Dict[str, str]] = [self.system_prompt]
         self.max_tokens = max_tokens
 
     async def AsyncChat(self, message: str):
-        self.history.append({"role": "user", "content": message})
+        self.history.append(CreateMessage(RespKeys.User, message))
         token_count = GetTokenCount(self.history)
         logger.info(f"Token Count: {token_count}")
         while len(self.history) > 1 and token_count > self.max_tokens:
@@ -63,21 +77,25 @@ class Chatbot:
             timeout=30,
             request_timeout=30,
         )
-        resp = ""
+        resp = CreateMessage(RespKeys.Assistant, str())
+        self.history.append(resp)
         try:
             async for msg in completion:
-                delta = msg["choices"][0]["delta"]
-                if "content" in delta:
-                    yield delta["content"]
-                    resp += delta["content"]
+                delta = msg[RespKeys.Choices][0][RespKeys.Delta]
+                if RespKeys.Content in delta:
+                    yield delta[RespKeys.Content]
+                    resp[RespKeys.Content] += delta[RespKeys.Content]
                 else:
                     logger.info(msg)
         except Exception as e:
             logger.error(e)
-        self.history.append({"role": "assistant", "content": resp})
 
     def Reset(self):
         self.history = [self.system_prompt]
+
+
+def CreateMessage(role: str, content: str):
+    return {RespKeys.Role: role, RespKeys.Content: content}
 
 
 def GetTokenCount(history: List[Dict[str, str]], engine="gpt-3.5-turbo") -> int:
@@ -87,7 +105,7 @@ def GetTokenCount(history: List[Dict[str, str]], engine="gpt-3.5-turbo") -> int:
         num_tokens += 4
         for key, value in message.items():
             num_tokens += len(encoding.encode(value))
-            if key == "name":
+            if key == RespKeys.Name:
                 num_tokens += 1
     num_tokens += 2
     return num_tokens
@@ -132,10 +150,12 @@ class OppyBot(AutoShardedBot):
         conv_type = config[ConfigKeys.ConverterType]
         self.conv = OpenCC(conv_type)
         openai.api_key = config[ConfigKeys.OpenAI_API_Key]
+        self.max_tokens = config[ConfigKeys.MaxTokens]
+        self.max_resp = config[ConfigKeys.MaxResp]
 
         # Init Chatbot
         self.chatbot: Dict[int, Chatbot] = {
-            t: Chatbot(system_prompt=self.system_prompt)
+            t: Chatbot(self.system_prompt, self.max_tokens)
             for t in self.target_chs
         }
 
@@ -263,8 +283,7 @@ class OppyBot(AutoShardedBot):
             resp_msg = self.ProcessMessage(collect_msg)
             if resp_msg.strip() and self.EndsWithDelim(resp_msg):
                 await msg.edit(content=resp_msg)
-                # TODO: Make This Configurable
-                if len(resp_msg) >= 1000:
+                if len(resp_msg) >= self.max_resp:
                     logger.info(resp_msg)
                     collect_msg = list()
                     msg = await message.channel.send(self.message_waiting)
